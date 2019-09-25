@@ -13,14 +13,15 @@ namespace mheads\jui;
 
 use yii\helpers\ArrayHelper;
 use yii\helpers\Html;
+use yii\helpers\Json;
 
 class AutoComplete extends \yii\jui\AutoComplete
 {
 	/**
 	 * @var string
 	 *
-	 * Specifies an arbitrary element output template. You can use wildcard keys of the form «{keyname}».
-	 * For example you could write the following in your widget configuration:
+	 * Определяет произвольный шаблона вывода элемента. Вы можете использовать подстановочные ключи вида «{имя ключа}».
+	 * Например, вы можете написать следующее в конфигурации вашего виджета:
 	 *
 	 * ```php
 	 * 'clientRenderItemTpl' => '<div>{label}<br><small>{description}</small><div>',
@@ -30,6 +31,16 @@ class AutoComplete extends \yii\jui\AutoComplete
 
 	/**
 	 * @var bool
+	 * 
+	 * Включает автоматический запуск поиска при фокусе на input
+	 */
+	public $autoSearch = false;
+
+	/**
+	 * @var bool
+	 * 
+	 * Активирует добавление скрытого инпута в которое пишется id значения, подтянутого из search items.
+	 * Часто нужно передавать не label или value, а совершенно иное значение на бекенд.
 	 */
 	public $useExtraInput = false;
 
@@ -37,6 +48,7 @@ class AutoComplete extends \yii\jui\AutoComplete
 	 * @var string
 	 * 
 	 * useExtraInput must be true
+	 * Указывает из какого поля брать значение в search items для подстановки в ExtraInput
 	 */
 	public $extraInputItemKey = 'id';
 
@@ -44,76 +56,42 @@ class AutoComplete extends \yii\jui\AutoComplete
 	 * @var string
 	 *
 	 * useExtraInput must be true
+	 * Это значение вставляется в поле, которое отображается пользователю
 	 */
 	public $displayInputValue = '';
 
 	protected function registerClientEvents($name, $id)
 	{
 		parent::registerClientEvents($name, $id);
-		$this->registerClientRenderItemTpl($id);
-		$this->registerClientHiddenInputEvents($id);
+		$this->registerClientJs($id);
 	}
 
-	protected function registerClientRenderItemTpl($id)
+	protected function registerClientJs($id)
 	{
-		if($this->clientRenderItemTpl)
-		{
-			$js = <<< JS
-jQuery('#$id').on('autocompletecreate', function(event, ui){
-	jQuery(event.target).autocomplete("instance")._renderItem = function(ul, item){
-		let itemTpl = '{$this->clientRenderItemTpl}';
-		
-		for (let key in item)
-		{
-			let value = '';
-			if(item.hasOwnProperty(key)) value = item[key];
-			itemTpl = itemTpl.replace(new RegExp('\{' + key + '\}', 'g'), value);	
-		}
-		
-		return jQuery("<li>").append(itemTpl).appendTo(ul);
-	};
-});
-JS;
-			$this->getView()->registerJs($js);
-		}
-	}
+		$registerParams = [
+			'id'      => $id,
+			'itemTpl' => $this->clientRenderItemTpl,
+		];
 
-	protected function registerClientHiddenInputEvents($id)
-	{
 		if($this->useExtraInput)
 		{
-			$js = <<< JS
-jQuery('#$id').on('autocompleteselect', function(event, ui){
-	let labelInput = $(event.target);
-	let valueInput = $('#$id-value');
+			$registerParams['extraId'] = $id."-value";
+			$registerParams['extraInputItemKey'] = $this->extraInputItemKey;
+		}
 
-	valueInput.val(ui.item['{$this->extraInputItemKey}']).trigger('change');
-	labelInput.data('value', ui.item.value || ui.item.label);
-});
-jQuery('#$id').on('autocompletecreate', function(event, ui){
-	let labelInput = $(event.target);
-	let valueInput = $('#$id-value');
-	
-	labelInput.on('blur', function(){
-		if(valueInput.val())
+		if($this->autoSearch)
 		{
-			if(labelInput.val())
-			{
-				labelInput.val(labelInput.data('value'));
-			}
-			else
-			{
-				valueInput.val('').trigger('change');
-				labelInput.val('');
-				labelInput.data('value', '');
-			}
+			$registerParams['autoSearch'] = true;
 		}
-		else labelInput.val('');
-	});
-});
-JS;
-			$this->getView()->registerJs($js);
-		}
+
+		$registerParams = Json::encode($registerParams);
+		$this->getView()->registerJs('mheadsJuiImproved.registerAutocomplete('.$registerParams.');');
+	}
+
+	public function registerWidget($name, $id = NULL)
+	{
+		parent::registerWidget($name, $id);
+		Asset::register($this->view);
 	}
 
 	/**
